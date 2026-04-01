@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Plus, Trash2, Upload, FileText, Download } from 'lucide-react';
 import { format } from 'date-fns';
-import { Document, Packer, Paragraph, TextRun, ImageRun, AlignmentType, HeadingLevel, convertInchesToTwip } from 'docx';
+import { Document, Packer, Paragraph, TextRun, ImageRun, AlignmentType, HeadingLevel, convertInchesToTwip, Table, TableRow, TableCell, WidthType, HeightRule, VerticalAlign } from 'docx';
 import { saveAs } from 'file-saver';
 
 type Problem = {
@@ -239,8 +239,11 @@ const App = () => {
       );
     }
 
-    // 5. 插入图片
-    const problemsWithImages = problems.filter(p => p.image);
+    // 5. 插入图片 (三列表格排版)
+    const problemsWithImages = problems
+      .map((p, index) => ({ p, indexStr: ['一','二','三','四','五','六','七','八','九','十'][index] || (index + 1).toString() }))
+      .filter(item => item.p.image);
+
     if (problemsWithImages.length > 0) {
       docChildren.push(
         new Paragraph({
@@ -249,65 +252,107 @@ const App = () => {
         })
       );
 
-      // 处理两列排版逻辑（如果只有一张图，直接居中；如果有两张，通过表格或者浮动，这里采用简化的居中堆叠或表格排版）
-      // docx 库对于图片的并排排版推荐使用 Table
-      // 收集所有带图片的段落
-      for (let i = 0; i < problems.length; i++) {
-        const problem = problems[i];
-        if (!problem.image) continue;
-        
-        const indexStr = ['一','二','三','四','五','六','七','八','九','十'][i] || (i + 1).toString();
-        const dimensions = await getImageDimensions(problem.image);
-        
-        // 限制最大宽度和高度 (公文页面宽度约 400-500px，设最大宽度为 300)
-        const MAX_WIDTH = 300;
-        const MAX_HEIGHT = 400;
-        let targetWidth = dimensions.width;
-        let targetHeight = dimensions.height;
-        
-        if (targetWidth > MAX_WIDTH) {
-          const ratio = MAX_WIDTH / targetWidth;
-          targetWidth = MAX_WIDTH;
-          targetHeight = targetHeight * ratio;
-        }
-        if (targetHeight > MAX_HEIGHT) {
-          const ratio = MAX_HEIGHT / targetHeight;
-          targetHeight = MAX_HEIGHT;
-          targetWidth = targetWidth * ratio;
+      const tableRows = [];
+      for (let i = 0; i < problemsWithImages.length; i += 3) {
+        const chunk = problemsWithImages.slice(i, i + 3);
+
+        const imageCells = [];
+        const captionCells = [];
+
+        for (let j = 0; j < 3; j++) {
+          const item = chunk[j];
+          if (item && item.p.image) {
+            const dimensions = await getImageDimensions(item.p.image);
+            // 页面可用宽度约 6.15 英寸，分3列，每列约 2.05 英寸 (约 2952 twips)。
+            // 限制最大图片尺寸为 180x180 px，以适应单元格并保持正方形
+            const MAX_DIM = 180;
+            let targetWidth = dimensions.width;
+            let targetHeight = dimensions.height;
+            if (targetWidth > MAX_DIM || targetHeight > MAX_DIM) {
+              if (targetWidth > targetHeight) {
+                targetHeight = targetHeight * (MAX_DIM / targetWidth);
+                targetWidth = MAX_DIM;
+              } else {
+                targetWidth = targetWidth * (MAX_DIM / targetHeight);
+                targetHeight = MAX_DIM;
+              }
+            }
+
+            imageCells.push(
+              new TableCell({
+                width: { size: 33.33, type: WidthType.PERCENTAGE },
+                verticalAlign: VerticalAlign.CENTER,
+                margins: { top: 100, bottom: 100, left: 100, right: 100 },
+                children: [
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [
+                      new ImageRun({
+                        data: base64DataURLToArrayBuffer(item.p.image),
+                        transformation: { width: targetWidth, height: targetHeight },
+                        type: "png",
+                      }),
+                    ],
+                  }),
+                ],
+              })
+            );
+
+            captionCells.push(
+              new TableCell({
+                width: { size: 33.33, type: WidthType.PERCENTAGE },
+                verticalAlign: VerticalAlign.CENTER,
+                children: [
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [
+                      new TextRun({
+                        text: `图${item.indexStr}`,
+                        font: "黑体",
+                        size: 24, // 小四或者五号
+                        bold: true,
+                      }),
+                    ],
+                  }),
+                ],
+              })
+            );
+          } else {
+            imageCells.push(
+              new TableCell({
+                width: { size: 33.33, type: WidthType.PERCENTAGE },
+                children: [new Paragraph({ text: "" })],
+              })
+            );
+            captionCells.push(
+              new TableCell({
+                width: { size: 33.33, type: WidthType.PERCENTAGE },
+                children: [new Paragraph({ text: "" })],
+              })
+            );
+          }
         }
 
-        docChildren.push(
-          new Paragraph({
-            alignment: AlignmentType.CENTER,
-            children: [
-              new ImageRun({
-                data: base64DataURLToArrayBuffer(problem.image),
-                transformation: {
-                  width: targetWidth,
-                  height: targetHeight,
-                },
-                type: "png"
-              }),
-            ],
-            spacing: { before: 200 },
+        tableRows.push(
+          new TableRow({
+            height: { value: 2952, rule: HeightRule.EXACT }, // 保证正方形，高的一边和长的一边一样长
+            children: imageCells,
           })
         );
-
-        docChildren.push(
-          new Paragraph({
-            alignment: AlignmentType.CENTER,
-            children: [
-              new TextRun({
-                text: `图${indexStr}`,
-                font: "黑体",
-                size: 28, // 小四或者五号
-                bold: true,
-              }),
-            ],
-            spacing: { after: 400 },
+        tableRows.push(
+          new TableRow({
+            height: { value: 400, rule: HeightRule.ATLEAST }, // 比较矮的说明行
+            children: captionCells,
           })
         );
       }
+
+      docChildren.push(
+        new Table({
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          rows: tableRows,
+        })
+      );
     }
 
     // 6. 二、改进建议
@@ -466,62 +511,68 @@ const App = () => {
           <div className="card-duo space-y-4">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-[#3c3c3c]">存在的问题</h2>
-              <button onClick={handleAddProblem} className="btn-duo btn-duo-blue py-2 px-4 text-sm flex items-center gap-2">
-                <Plus size={16} /> 添加问题
-              </button>
             </div>
 
-            {problems.map((problem, index) => (
-              <div key={problem.id} className="p-4 rounded-xl border-2 border-duo-gray bg-[#f9f9f9] space-y-3 relative group">
-                {problems.length > 1 && (
-                  <button 
-                    onClick={() => handleRemoveProblem(problem.id)}
-                    className="absolute -top-3 -right-3 w-8 h-8 bg-duo-red text-white rounded-full flex items-center justify-center shadow-[0_3px_0_0_var(--color-duo-red-dark)] hover:bg-[#ff5e5e] transition-colors"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
-                
-                <div className="font-bold text-duo-blue">问题 {index + 1}</div>
-                
-                <input 
-                  type="text" 
-                  placeholder="问题科室 (如：心内科)"
-                  value={problem.department}
-                  onChange={e => handleProblemChange(problem.id, 'department', e.target.value)}
-                  className="input-duo py-2 text-base"
-                />
-                
-                <textarea 
-                  placeholder="存在的问题描述"
-                  value={problem.description}
-                  onChange={e => handleProblemChange(problem.id, 'description', e.target.value)}
-                  className="input-duo py-2 text-base min-h-[80px]"
-                />
-
-                <div>
-                  <input 
-                    type="file" 
-                    accept="image/*"
-                    onChange={e => handleImageUpload(problem.id, e)}
-                    className="hidden"
-                    id={`image-upload-${problem.id}`}
-                  />
-                  <label 
-                    htmlFor={`image-upload-${problem.id}`}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-dashed border-duo-blue text-duo-blue font-bold cursor-pointer hover:bg-[#f2fbfd] transition-colors"
-                  >
-                    <Upload size={18} />
-                    {problem.image ? '更换图片' : '上传问题图片'}
-                  </label>
-                  {problem.image && (
-                    <div className="mt-2 rounded-xl overflow-hidden border-2 border-duo-gray max-w-[200px]">
-                      <img src={problem.image} alt="问题" className="w-full h-auto" />
-                    </div>
+            <div className="space-y-4">
+              {problems.map((problem, index) => (
+                <div key={problem.id} className="p-4 rounded-xl border-2 border-duo-gray bg-[#f9f9f9] space-y-3 relative group">
+                  {problems.length > 1 && (
+                    <button 
+                      onClick={() => handleRemoveProblem(problem.id)}
+                      className="absolute -top-3 -right-3 w-8 h-8 bg-duo-red text-white rounded-full flex items-center justify-center shadow-[0_3px_0_0_var(--color-duo-red-dark)] hover:bg-[#ff5e5e] transition-colors"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   )}
+                  
+                  <div className="font-bold text-duo-blue">问题 {index + 1}</div>
+                  
+                  <input 
+                    type="text" 
+                    placeholder="问题科室 (如：心内科)"
+                    value={problem.department}
+                    onChange={e => handleProblemChange(problem.id, 'department', e.target.value)}
+                    className="input-duo py-2 text-base"
+                  />
+                  
+                  <textarea 
+                    placeholder="存在的问题描述"
+                    value={problem.description}
+                    onChange={e => handleProblemChange(problem.id, 'description', e.target.value)}
+                    className="input-duo py-2 text-base min-h-[80px]"
+                  />
+
+                  <div>
+                    <input 
+                      type="file" 
+                      accept="image/*"
+                      onChange={e => handleImageUpload(problem.id, e)}
+                      className="hidden"
+                      id={`image-upload-${problem.id}`}
+                    />
+                    <label 
+                      htmlFor={`image-upload-${problem.id}`}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-dashed border-duo-blue text-duo-blue font-bold cursor-pointer hover:bg-[#f2fbfd] transition-colors"
+                    >
+                      <Upload size={18} />
+                      {problem.image ? '更换图片' : '上传问题图片'}
+                    </label>
+                    {problem.image && (
+                      <div className="mt-2 rounded-xl overflow-hidden border-2 border-duo-gray max-w-[200px]">
+                        <img src={problem.image} alt="问题" className="w-full h-auto" />
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
+            
+            <button 
+              onClick={handleAddProblem} 
+              className="btn-duo btn-duo-blue w-full py-3 text-lg flex items-center justify-center gap-2 mt-4"
+            >
+              <Plus size={20} /> 添加下一个问题
+            </button>
           </div>
 
           <div className="card-duo space-y-4">
@@ -653,27 +704,48 @@ const App = () => {
                 ))}
               </div>
               
-              {/* 图片区域 - 最多两列 */}
+              {/* 图片区域 - 严格三列表格 */}
               {problems.some(p => p.image) && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
-                  {problems.map((problem, index) => {
-                    if (!problem.image) return null;
-                    return (
-                      <div key={`img-${problem.id}`} className="flex flex-col items-center border border-gray-200 p-2 rounded bg-gray-50">
-                        <div className="w-full h-48 flex items-center justify-center bg-white rounded overflow-hidden">
-                          <img 
-                            src={problem.image} 
-                            alt={`图${['一','二','三','四','五','六','七','八','九','十'][index] || index + 1}`} 
-                            className="max-w-full max-h-full object-contain"
-                          />
-                        </div>
-                        <p className="text-sm text-gray-700 mt-2 font-bold">
-                          图{['一','二','三','四','五','六','七','八','九','十'][index] || index + 1}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
+                <table className="w-full border-collapse border border-gray-400 mt-6 table-fixed bg-white">
+                  <tbody>
+                    {Array.from({ length: Math.ceil(problems.filter(p => p.image).length / 3) }).map((_, rowIndex) => {
+                      const imageProblems = problems
+                        .map((p, index) => ({ p, indexStr: ['一','二','三','四','五','六','七','八','九','十'][index] || (index + 1).toString() }))
+                        .filter(item => item.p.image);
+                      const chunk = imageProblems.slice(rowIndex * 3, rowIndex * 3 + 3);
+                      return (
+                        <React.Fragment key={rowIndex}>
+                          {/* 图片行 (正方形) */}
+                          <tr>
+                            {[0, 1, 2].map(colIndex => {
+                              const item = chunk[colIndex];
+                              return (
+                                <td key={`img-${colIndex}`} className="border border-gray-400 p-2 text-center align-middle" style={{ width: '33.33%', aspectRatio: '1/1' }}>
+                                  {item && item.p.image ? (
+                                    <div className="w-full h-full flex items-center justify-center overflow-hidden">
+                                      <img src={item.p.image} alt={`图${item.indexStr}`} className="max-w-full max-h-full object-contain" />
+                                    </div>
+                                  ) : null}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                          {/* 图注行 (较矮) */}
+                          <tr>
+                            {[0, 1, 2].map(colIndex => {
+                              const item = chunk[colIndex];
+                              return (
+                                <td key={`cap-${colIndex}`} className="border border-gray-400 p-1 text-center align-middle font-bold text-sm h-8 bg-gray-50">
+                                  {item ? `图${item.indexStr}` : ''}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
               )}
             </div>
 
