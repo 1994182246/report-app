@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+@layer theme {
+  :root {
+    --color-duo-green: #58cc02;
+    --color-duo-green-dark: #58a700;
+    --color-duo-blue: #1cb0f6;
+    --color-duo-blue-dark: #1899d6;
+    --color-duo-red: #ff4b4b;
+    --color-duo-red-dark: #ea1515;
+    --color-duo-gray: #e5e5e5;
+    --color-duo-gray-dark: #afafaf;
+    --color-duo-text: #4b4b4b;
+  }
+}
+
+@layer base {
+  body {
+    background-color: #ffffff;
+    color: var(--color-duo-text);
+    font-family: ui-sans-serif, system-ui, sans-serif;
+  }
+}
+
+@layer components {
+  .btn-duo {
+    position: relative;
+    border-radius: 1rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    transition-property: all;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+  }
+  .btn-duo:active {
+    top: 4px;
+    box-shadow: none !important;
+  }
+
+  .btn-duo-green {
+    background-color: var(--color-duo-green);
+    color: white;
+    box-shadow: 0 4px 0 0 var(--color-duo-green-dark);
+  }
+  .btn-duo-green:hover {
+    background-color: #61e002;
+  }
+
+  .btn-duo-blue {
+    background-color: var(--color-duo-blue);
+    color: white;
+    box-shadow: 0 4px 0 0 var(--color-duo-blue-dark);
+  }
+  .btn-duo-blue:hover {
+    background-color: #20c3ff;
+  }
+
+  .btn-duo-red {
+    background-color: var(--color-duo-red);
+    color: white;
+    box-shadow: 0 4px 0 0 var(--color-duo-red-dark);
+  }
+  .btn-duo-red:hover {
+    background-color: #ff5e5e;
+  }
+
+  .input-duo {
+    width: 100%;
+    border-radius: 1rem;
+    border-width: 2px;
+    border-color: var(--color-duo-gray);
+    background-color: white;
+    padding: 1rem;
+    font-size: 1.125rem;
+    line-height: 1.75rem;
+    font-weight: 500;
+    color: var(--color-duo-text);
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+    transition-property: all;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+  }
+  .input-duo:focus {
+    border-color: var(--color-duo-blue);
+    background-color: #f2fbfd;
+  }
+
+  .card-duo {
+    border-radius: 1.5rem;
+    border-width: 2px;
+    border-color: var(--color-duo-gray);
+    background-color: white;
+    padding: 1.5rem;
+  }
+}
