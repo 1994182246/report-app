@@ -40,6 +40,7 @@ const App = () => {
   const [newTemplateText, setNewTemplateText] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
   const [isExporting, setIsExporting] = useState(false);
+  const [showWechatHint, setShowWechatHint] = useState(false);
 
   const reportRef = useRef<HTMLDivElement>(null);
 
@@ -92,7 +93,16 @@ const App = () => {
     }
   };
 
+  const isWechat = () => {
+    return /MicroMessenger/i.test(navigator.userAgent);
+  };
+
   const exportAsWord = async () => {
+    if (isWechat()) {
+      setShowWechatHint(true);
+      return;
+    }
+
     setIsExporting(true);
     // 辅助函数：将 Base64 数据 URI 转换为 ArrayBuffer
     const base64DataURLToArrayBuffer = (dataURI: string) => {
@@ -485,6 +495,7 @@ const App = () => {
   };
 
   return (
+    <>
     <div className="min-h-screen bg-[#f7f7f7] p-4 md:p-8 font-sans">
       <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8">
         
@@ -793,6 +804,39 @@ const App = () => {
 
       </div>
     </div>
+
+    {/* 微信内打开提示遮罩层 */}
+    {showWechatHint && (
+      <div 
+        className="fixed inset-0 z-50 bg-black/80 flex flex-col items-center pt-10 px-4 cursor-pointer"
+        onClick={() => setShowWechatHint(false)}
+      >
+        <div className="absolute top-4 right-6 animate-bounce">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinelinejoin="round">
+            <path d="M5 12h14"></path>
+            <path d="m12 5 7 7-7 7"></path>
+          </svg>
+        </div>
+        <div className="bg-white p-6 rounded-2xl max-w-sm w-full mt-16 text-center space-y-4 relative">
+          <div className="w-16 h-16 bg-duo-green text-white rounded-full flex items-center justify-center mx-auto mb-4">
+            <Download size={32} />
+          </div>
+          <h3 className="text-xl font-bold text-[#3c3c3c]">微信无法直接下载文档</h3>
+          <p className="text-[#777] leading-relaxed">
+            请点击屏幕右上角的 <span className="font-bold text-[#3c3c3c]">···</span> 图标，<br/>
+            选择 <span className="font-bold text-duo-blue">“在浏览器打开”</span> 或 <span className="font-bold text-duo-blue">“在Safari中打开”</span><br/>
+            然后再点击导出按钮即可。
+          </p>
+          <button 
+            className="btn-duo btn-duo-gray w-full py-3 mt-4 text-[#afafaf]"
+            onClick={() => setShowWechatHint(false)}
+          >
+            我知道了
+          </button>
+        </div>
+      </div>
+    )}
+    </>
   );
 };
 
