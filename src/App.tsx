@@ -39,6 +39,7 @@ const App = () => {
   const [suggestionTemplates, setSuggestionTemplates] = useState<string[]>(BUILT_IN_SUGGESTIONS);
   const [newTemplateText, setNewTemplateText] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
+  const [isExporting, setIsExporting] = useState(false);
 
   const reportRef = useRef<HTMLDivElement>(null);
 
@@ -92,6 +93,7 @@ const App = () => {
   };
 
   const exportAsWord = async () => {
+    setIsExporting(true);
     // 辅助函数：将 Base64 数据 URI 转换为 ArrayBuffer
     const base64DataURLToArrayBuffer = (dataURI: string) => {
       const base64String = dataURI.split(',')[1];
@@ -432,9 +434,35 @@ const App = () => {
       ],
     });
 
-    Packer.toBlob(doc).then((blob) => {
-      saveAs(blob, `${formatDateTitle(inspectionDate)}${inspectionItem}专项检查报告.docx`);
-    });
+    try {
+      const blob = await Packer.toBlob(doc);
+      const fileName = `${formatDateTitle(inspectionDate)}${inspectionItem}专项检查报告.docx`;
+      
+      // 针对移动端，优先尝试使用原生分享 API，这能完美解决微信/Safari等内置浏览器的下载限制
+      const file = new File([blob], fileName, { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: fileName,
+        });
+      } else {
+        // 不支持 share API 或 PC 端，回退到 file-saver 下载
+        saveAs(blob, fileName);
+      }
+    } catch (error) {
+      console.error("Export failed:", error);
+      // 用户取消分享等情况可能会抛出错误，作为回退手段尝试普通下载
+      if (error instanceof Error && error.name !== 'AbortError') {
+        try {
+          const blob = await Packer.toBlob(doc);
+          saveAs(blob, `${formatDateTitle(inspectionDate)}${inspectionItem}专项检查报告.docx`);
+        } catch (fallbackErr) {
+          alert("导出失败，请重试！");
+        }
+      }
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const formatDateTitle = (dateString: string) => {
@@ -462,11 +490,11 @@ const App = () => {
         
         {/* Left Form Section */}
         <div className="space-y-6">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-12 h-12 rounded-2xl bg-duo-green flex items-center justify-center shadow-[0_4px_0_0_var(--color-duo-green-dark)]">
+          <div className="flex items-center gap-3 mb-6 sm:mb-8">
+            <div className="w-12 h-12 rounded-2xl bg-duo-green flex items-center justify-center shadow-[0_4px_0_0_var(--color-duo-green-dark)] flex-shrink-0">
               <FileText className="text-white w-7 h-7" />
             </div>
-            <h1 className="text-3xl font-bold text-[#3c3c3c]">生成检查报告</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-[#3c3c3c]">生成检查报告</h1>
           </div>
 
           <div className="card-duo space-y-4">
@@ -666,20 +694,21 @@ const App = () => {
         </div>
 
         {/* Right Preview Section */}
-        <div className="lg:sticky lg:top-8 h-fit space-y-4">
-          <div className="flex justify-between items-center">
+        <div className="lg:sticky lg:top-8 h-fit space-y-4 mt-8 lg:mt-0">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <h2 className="text-2xl font-bold text-[#3c3c3c]">报告预览</h2>
             <button 
               onClick={exportAsWord}
-              className="btn-duo btn-duo-green py-2 px-6 flex items-center gap-2"
+              disabled={isExporting}
+              className={`btn-duo ${isExporting ? 'bg-duo-gray cursor-not-allowed shadow-none top-[4px]' : 'btn-duo-green'} w-full sm:w-auto py-3 sm:py-2 px-6 flex items-center justify-center gap-2 transition-all`}
             >
-              <Download size={18} /> 导出Word文档
+              <Download size={18} /> {isExporting ? '正在生成...' : '导出Word文档'}
             </button>
           </div>
           
           <div 
             ref={reportRef}
-            className="bg-white p-8 rounded-2xl border-2 border-duo-gray shadow-sm text-[#2a2a2a] leading-relaxed break-words"
+            className="bg-white p-4 sm:p-8 rounded-2xl border-2 border-duo-gray shadow-sm text-[#2a2a2a] leading-relaxed break-words overflow-x-auto"
             style={{ fontFamily: 'SimSun, "宋体", serif' }}
           >
             <h1 className="text-2xl font-bold text-center mb-6">
