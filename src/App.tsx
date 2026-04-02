@@ -54,6 +54,7 @@ const App = () => {
   }, [suggestionTemplates]);
   const [isExporting, setIsExporting] = useState(false);
   const [wechatDownloadUrl, setWechatDownloadUrl] = useState<{ url: string; fileName: string } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const reportRef = useRef<HTMLDivElement>(null);
 
@@ -424,10 +425,12 @@ const App = () => {
       const blob = await Packer.toBlob(doc);
       const fileName = `${formatDateTitle(inspectionDate)}${inspectionItem}专项检查报告.docx`;
 
-      // 微信内置浏览器：生成 Blob URL 供用户长按下载
+      // 微信内置浏览器：生成 Data URL 供用户复制后在浏览器打开下载
       if (isWechat()) {
-        const url = URL.createObjectURL(blob);
-        setWechatDownloadUrl({ url, fileName });
+        const arrayBuffer = await blob.arrayBuffer();
+        const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+        const dataUrl = `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${base64}`;
+        setWechatDownloadUrl({ url: dataUrl, fileName });
         return;
       }
 
@@ -805,21 +808,24 @@ const App = () => {
           </div>
           <h3 className="text-xl font-bold text-[#3c3c3c]">文档已生成</h3>
           <p className="text-[#777] text-sm leading-relaxed">
-            长按下方链接，选择<span className="font-bold text-[#3c3c3c]">「下载链接」</span>或<span className="font-bold text-[#3c3c3c]">「在浏览器打开」</span>即可保存文档。
+            复制下方链接，在浏览器中打开即可下载文档。
           </p>
-          <a
-            href={wechatDownloadUrl.url}
-            download={wechatDownloadUrl.fileName}
-            className="block w-full py-3 px-4 rounded-xl bg-[#f0f9ff] border-2 border-duo-blue text-duo-blue font-bold text-sm break-all"
-          >
-            📄 {wechatDownloadUrl.fileName}
-          </a>
+          <div className="w-full py-3 px-4 rounded-xl bg-[#f0f9ff] border-2 border-duo-blue text-duo-blue text-xs break-all text-left select-all cursor-text">
+            {wechatDownloadUrl.url.slice(0, 80)}...
+          </div>
           <button
-            className="btn-duo btn-duo-gray w-full py-3 text-[#afafaf]"
+            className="btn-duo btn-duo-blue w-full py-3"
             onClick={() => {
-              URL.revokeObjectURL(wechatDownloadUrl.url);
-              setWechatDownloadUrl(null);
+              navigator.clipboard.writeText(wechatDownloadUrl.url);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
             }}
+          >
+            {copied ? '已复制 ✓' : '复制链接'}
+          </button>
+          <button
+            className="btn-duo btn-duo-gray w-full py-2 text-[#afafaf] text-sm"
+            onClick={() => setWechatDownloadUrl(null)}
           >
             关闭
           </button>
