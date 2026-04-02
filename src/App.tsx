@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Plus, Trash2, Upload, FileText, Download } from 'lucide-react';
 import { format } from 'date-fns';
-import { Document, Packer, Paragraph, TextRun, ImageRun, AlignmentType, HeadingLevel, convertInchesToTwip, Table, TableRow, TableCell, WidthType, HeightRule, VerticalAlign } from 'docx';
+import { Document, Packer, Paragraph, TextRun, ImageRun, AlignmentType, convertInchesToTwip, Table, TableRow, TableCell, WidthType, HeightRule, VerticalAlign } from 'docx';
 import { saveAs } from 'file-saver';
 
 type Problem = {
@@ -23,6 +23,8 @@ const BUILT_IN_SUGGESTIONS = [
   '增加专项检查频次，督促持续整改',
 ];
 
+const CHINESE_NUMS = ['一','二','三','四','五','六','七','八','九','十'];
+
 const App = () => {
   const [inspectionDate, setInspectionDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [inspectionDepartment, setInspectionDepartment] = useState('内科');
@@ -36,9 +38,20 @@ const App = () => {
     { id: crypto.randomUUID(), text: '' }
   ]);
 
-  const [suggestionTemplates, setSuggestionTemplates] = useState<string[]>(BUILT_IN_SUGGESTIONS);
+  const [suggestionTemplates, setSuggestionTemplates] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('suggestionTemplates');
+      return saved ? JSON.parse(saved) : BUILT_IN_SUGGESTIONS;
+    } catch {
+      return BUILT_IN_SUGGESTIONS;
+    }
+  });
   const [newTemplateText, setNewTemplateText] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
+
+  useEffect(() => {
+    localStorage.setItem('suggestionTemplates', JSON.stringify(suggestionTemplates));
+  }, [suggestionTemplates]);
   const [isExporting, setIsExporting] = useState(false);
   const [showWechatHint, setShowWechatHint] = useState(false);
 
@@ -129,35 +142,37 @@ const App = () => {
 
     const docChildren: any[] = [];
 
-    // 1. 标题 (方正小标宋简体，二号)
-    // 二号字体大小为 22pt，在 docx 中大小单位是半点(half-points)，所以是 44
+    // 1. 标题 (宋体，二号 = 22pt -> size: 44)
     docChildren.push(
       new Paragraph({
-        text: `${formatDateTitle(inspectionDate)}${inspectionItem}专项检查报告`,
-        heading: HeadingLevel.TITLE,
+        children: [
+          new TextRun({
+            text: `${formatDateTitle(inspectionDate)}${inspectionItem}专项检查报告`,
+            font: "宋体",
+            size: 44, // 二号
+            bold: true,
+          }),
+        ],
         alignment: AlignmentType.CENTER,
         spacing: {
           after: 400,
         },
-        style: "TitleStyle",
       })
     );
 
-    // 2. 导语正文 (仿宋_GB2312，三号，首行缩进两字符)
-    // 三号字体为 16pt -> size: 32
-    // 首行缩进两字符：三号字宽 16pt，两字符即 32pt。换算为 twip (1 pt = 20 twip)，即 640 twips
-    // 行距：单倍行距或固定值，这里设置常用的 1.5 倍行距或特定固定值 (28磅 -> 560)
+    // 2. 导语正文 (宋体，四号 = 14pt -> size: 28，首行缩进两字符)
+    // 四号字宽 14pt，两字符即 28pt -> 560 twips
     docChildren.push(
       new Paragraph({
         children: [
           new TextRun({
             text: `${formatDateText(inspectionDate)}，药学部药品质量管理工作小组对${inspectionDepartment}科室${getDisplayItem(inspectionItem)}进行检查，现将存在问题整理汇报如下：`,
-            font: "仿宋_GB2312",
-            size: 32, // 三号
+            font: "宋体",
+            size: 28, // 四号
           }),
         ],
         indent: {
-          firstLine: 640,
+          firstLine: 560,
         },
         spacing: {
           line: 560, // 行距 28 磅
@@ -167,14 +182,14 @@ const App = () => {
       })
     );
 
-    // 3. 一、存在问题
+    // 3. 一、存在问题 (宋体，四号，加粗)
     docChildren.push(
       new Paragraph({
         children: [
           new TextRun({
             text: "一、存在问题：",
-            font: "黑体", // 公文一级标题常使用黑体
-            size: 32,
+            font: "宋体",
+            size: 28, // 四号
             bold: true,
           }),
         ],
@@ -188,15 +203,25 @@ const App = () => {
     );
 
     // 4. 渲染问题列表文字
+    // 先建立图片编号映射：只对有图片的问题按顺序编号
+    const imageIndexMap = new Map<string, string>();
+    let imageCounter = 0;
+    for (const problem of problems) {
+      if (problem.image) {
+        imageIndexMap.set(problem.id, CHINESE_NUMS[imageCounter] || (imageCounter + 1).toString());
+        imageCounter++;
+      }
+    }
+
     for (let i = 0; i < problems.length; i++) {
       const problem = problems[i];
-      const indexStr = ['一','二','三','四','五','六','七','八','九','十'][i] || (i + 1).toString();
+      const imgIndexStr = imageIndexMap.get(problem.id);
       
       const children = [
         new TextRun({
           text: `${i + 1}. `,
-          font: "仿宋_GB2312",
-          size: 32,
+          font: "宋体",
+          size: 28,
         })
       ];
 
@@ -204,8 +229,8 @@ const App = () => {
         children.push(
           new TextRun({
             text: problem.department,
-            font: "仿宋_GB2312",
-            size: 32,
+            font: "宋体",
+            size: 28,
             bold: true,
           })
         );
@@ -213,8 +238,8 @@ const App = () => {
         children.push(
           new TextRun({
             text: "___",
-            font: "仿宋_GB2312",
-            size: 32,
+            font: "宋体",
+            size: 28,
           })
         );
       }
@@ -222,17 +247,17 @@ const App = () => {
       children.push(
         new TextRun({
           text: `：${problem.description || '___'}`,
-          font: "仿宋_GB2312",
-          size: 32,
+          font: "宋体",
+          size: 28,
         })
       );
 
       if (problem.image) {
         children.push(
           new TextRun({
-            text: `（见图${indexStr}）。`,
-            font: "仿宋_GB2312",
-            size: 32,
+            text: `（见图${imgIndexStr}）。`,
+            font: "宋体",
+            size: 28,
           })
         );
       }
@@ -241,7 +266,7 @@ const App = () => {
         new Paragraph({
           children: children,
           indent: {
-            firstLine: 640,
+            firstLine: 560,
           },
           spacing: {
             line: 560,
@@ -251,33 +276,33 @@ const App = () => {
       );
     }
 
-    // 5. 插入图片 (三列表格排版)
+    // 5. 插入图片 (1张→1列，2张→2列，3+张→3列)
     const problemsWithImages = problems
-      .map((p, index) => ({ p, indexStr: ['一','二','三','四','五','六','七','八','九','十'][index] || (index + 1).toString() }))
-      .filter(item => item.p.image);
+      .filter(p => p.image)
+      .map(p => ({ p, indexStr: imageIndexMap.get(p.id)! }));
 
     if (problemsWithImages.length > 0) {
       docChildren.push(
         new Paragraph({
-          text: "", // 换行
+          text: "",
           spacing: { after: 200 },
         })
       );
 
-      const tableRows = [];
-      for (let i = 0; i < problemsWithImages.length; i += 3) {
-        const chunk = problemsWithImages.slice(i, i + 3);
+      const colCount = problemsWithImages.length === 1 ? 1 : problemsWithImages.length === 2 ? 2 : 3;
+      const colWidth = Math.floor(100 / colCount);
+      const MAX_DIM = colCount === 1 ? 300 : colCount === 2 ? 240 : 180;
 
+      const tableRows = [];
+      for (let i = 0; i < problemsWithImages.length; i += colCount) {
+        const chunk = problemsWithImages.slice(i, i + colCount);
         const imageCells = [];
         const captionCells = [];
 
-        for (let j = 0; j < 3; j++) {
+        for (let j = 0; j < colCount; j++) {
           const item = chunk[j];
           if (item && item.p.image) {
             const dimensions = await getImageDimensions(item.p.image);
-            // 页面可用宽度约 6.15 英寸，分3列，每列约 2.05 英寸 (约 2952 twips)。
-            // 限制最大图片尺寸为 180x180 px，以适应单元格并保持正方形
-            const MAX_DIM = 180;
             let targetWidth = dimensions.width;
             let targetHeight = dimensions.height;
             if (targetWidth > MAX_DIM || targetHeight > MAX_DIM) {
@@ -292,7 +317,7 @@ const App = () => {
 
             imageCells.push(
               new TableCell({
-                width: { size: 33.33, type: WidthType.PERCENTAGE },
+                width: { size: colWidth, type: WidthType.PERCENTAGE },
                 verticalAlign: VerticalAlign.CENTER,
                 margins: { top: 100, bottom: 100, left: 100, right: 100 },
                 children: [
@@ -309,10 +334,9 @@ const App = () => {
                 ],
               })
             );
-
             captionCells.push(
               new TableCell({
-                width: { size: 33.33, type: WidthType.PERCENTAGE },
+                width: { size: colWidth, type: WidthType.PERCENTAGE },
                 verticalAlign: VerticalAlign.CENTER,
                 children: [
                   new Paragraph({
@@ -320,8 +344,8 @@ const App = () => {
                     children: [
                       new TextRun({
                         text: `图${item.indexStr}`,
-                        font: "黑体",
-                        size: 24, // 小四或者五号
+                        font: "宋体",
+                        size: 24,
                         bold: true,
                       }),
                     ],
@@ -330,51 +354,26 @@ const App = () => {
               })
             );
           } else {
-            imageCells.push(
-              new TableCell({
-                width: { size: 33.33, type: WidthType.PERCENTAGE },
-                children: [new Paragraph({ text: "" })],
-              })
-            );
-            captionCells.push(
-              new TableCell({
-                width: { size: 33.33, type: WidthType.PERCENTAGE },
-                children: [new Paragraph({ text: "" })],
-              })
-            );
+            imageCells.push(new TableCell({ width: { size: colWidth, type: WidthType.PERCENTAGE }, children: [new Paragraph({ text: "" })] }));
+            captionCells.push(new TableCell({ width: { size: colWidth, type: WidthType.PERCENTAGE }, children: [new Paragraph({ text: "" })] }));
           }
         }
 
-        tableRows.push(
-          new TableRow({
-            height: { value: 2952, rule: HeightRule.EXACT }, // 保证正方形，高的一边和长的一边一样长
-            children: imageCells,
-          })
-        );
-        tableRows.push(
-          new TableRow({
-            height: { value: 400, rule: HeightRule.ATLEAST }, // 比较矮的说明行
-            children: captionCells,
-          })
-        );
+        tableRows.push(new TableRow({ height: { value: 2952, rule: HeightRule.EXACT }, children: imageCells }));
+        tableRows.push(new TableRow({ height: { value: 400, rule: HeightRule.ATLEAST }, children: captionCells }));
       }
 
-      docChildren.push(
-        new Table({
-          width: { size: 100, type: WidthType.PERCENTAGE },
-          rows: tableRows,
-        })
-      );
+      docChildren.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: tableRows }));
     }
 
-    // 6. 二、改进建议
+    // 6. 二、改进建议 (宋体，四号，加粗)
     docChildren.push(
       new Paragraph({
         children: [
           new TextRun({
             text: "二、改进建议：",
-            font: "黑体",
-            size: 32,
+            font: "宋体",
+            size: 28, // 四号
             bold: true,
           }),
         ],
@@ -393,12 +392,12 @@ const App = () => {
           children: [
             new TextRun({
               text: `${i + 1}. ${suggestions[i].text || '___'}`,
-              font: "仿宋_GB2312",
-              size: 32,
+              font: "宋体",
+              size: 28, // 四号
             }),
           ],
           indent: {
-            firstLine: 640,
+            firstLine: 560,
           },
           spacing: {
             line: 560,
@@ -409,24 +408,6 @@ const App = () => {
     }
 
     const doc = new Document({
-      styles: {
-        paragraphStyles: [
-          {
-            id: "TitleStyle",
-            name: "Title Style",
-            basedOn: "Normal",
-            next: "Normal",
-            run: {
-              font: "方正小标宋简体",
-              size: 44, // 二号 (22pt * 2)
-            },
-            paragraph: {
-              alignment: AlignmentType.CENTER,
-              spacing: { after: 400 },
-            }
-          }
-        ]
-      },
       sections: [
         {
           properties: {
@@ -733,60 +714,68 @@ const App = () => {
             <div className="mb-6">
               <h2 className="text-xl font-bold mb-3">一、存在问题：</h2>
               <div className="space-y-2 pl-2 mb-6">
-                {problems.map((problem, index) => (
-                  <div key={problem.id} className="text-lg">
-                    <p>
-                      {index + 1}. {problem.department ? <span className="font-bold">{problem.department}</span> : '___'}：
-                      {problem.description || '___'}
-                      {problem.image && `（见图${['一','二','三','四','五','六','七','八','九','十'][index] || index + 1}）。`}
-                    </p>
-                  </div>
-                ))}
+                {(() => {
+                  let imgCount = 0;
+                  return problems.map((problem, index) => {
+                    const imgIdx = problem.image ? CHINESE_NUMS[imgCount++] || imgCount : null;
+                    return (
+                      <div key={problem.id} className="text-lg">
+                        <p>
+                          {index + 1}. {problem.department ? <span className="font-bold">{problem.department}</span> : '___'}：
+                          {problem.description || '___'}
+                          {problem.image && `（见图${imgIdx}）。`}
+                        </p>
+                      </div>
+                    );
+                  });
+                })()}
               </div>
               
-              {/* 图片区域 - 严格三列表格 */}
-              {problems.some(p => p.image) && (
-                <table className="w-full border-collapse border border-gray-400 mt-6 table-fixed bg-white">
-                  <tbody>
-                    {Array.from({ length: Math.ceil(problems.filter(p => p.image).length / 3) }).map((_, rowIndex) => {
-                      const imageProblems = problems
-                        .map((p, index) => ({ p, indexStr: ['一','二','三','四','五','六','七','八','九','十'][index] || (index + 1).toString() }))
-                        .filter(item => item.p.image);
-                      const chunk = imageProblems.slice(rowIndex * 3, rowIndex * 3 + 3);
-                      return (
+              {/* 图片区域 - 动态列数 */}
+              {problems.some(p => p.image) && (() => {
+                const imgProblems = problems
+                  .filter(p => p.image)
+                  .map((p, idx) => ({ p, indexStr: CHINESE_NUMS[idx] || (idx + 1).toString() }));
+                const cols = imgProblems.length === 1 ? 1 : imgProblems.length === 2 ? 2 : 3;
+                const colStyle = { width: `${Math.floor(100 / cols)}%` };
+                const rows: typeof imgProblems[] = [];
+                for (let i = 0; i < imgProblems.length; i += cols) rows.push(imgProblems.slice(i, i + cols));
+
+                return (
+                  <table className="w-full border-collapse border border-gray-400 mt-6 table-fixed bg-white">
+                    <tbody>
+                      {rows.map((chunk, rowIndex) => (
                         <React.Fragment key={rowIndex}>
-                          {/* 图片行 (正方形) */}
                           <tr>
-                            {[0, 1, 2].map(colIndex => {
+                            {Array.from({ length: cols }).map((_, colIndex) => {
                               const item = chunk[colIndex];
                               return (
-                                <td key={`img-${colIndex}`} className="border border-gray-400 p-2 text-center align-middle" style={{ width: '33.33%', aspectRatio: '1/1' }}>
-                                  {item && item.p.image ? (
+                                <td key={`img-${colIndex}`} className="border border-gray-400 p-2 text-center align-middle" style={{ ...colStyle, aspectRatio: '1/1' }}>
+                                  {item ? (
                                     <div className="w-full h-full flex items-center justify-center overflow-hidden">
-                                      <img src={item.p.image} alt={`图${item.indexStr}`} className="max-w-full max-h-full object-contain" />
+                                      <img src={item.p.image!} alt={`图${item.indexStr}`} className="max-w-full max-h-full object-contain" />
                                     </div>
                                   ) : null}
                                 </td>
                               );
                             })}
                           </tr>
-                          {/* 图注行 (较矮) */}
                           <tr>
-                            {[0, 1, 2].map(colIndex => {
+                            {Array.from({ length: cols }).map((_, colIndex) => {
                               const item = chunk[colIndex];
                               return (
-                                <td key={`cap-${colIndex}`} className="border border-gray-400 p-1 text-center align-middle font-bold text-sm h-8 bg-gray-50">
+                                <td key={`cap-${colIndex}`} className="border border-gray-400 p-1 text-center align-middle font-bold text-sm h-8 bg-gray-50" style={colStyle}>
                                   {item ? `图${item.indexStr}` : ''}
                                 </td>
                               );
                             })}
                           </tr>
                         </React.Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              })()}
             </div>
 
             <div>
