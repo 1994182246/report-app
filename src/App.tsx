@@ -53,8 +53,6 @@ const App = () => {
     localStorage.setItem('suggestionTemplates', JSON.stringify(suggestionTemplates));
   }, [suggestionTemplates]);
   const [isExporting, setIsExporting] = useState(false);
-  const [wechatDownloadUrl, setWechatDownloadUrl] = useState<{ url: string; fileName: string } | null>(null);
-  const [copied, setCopied] = useState(false);
 
   const reportRef = useRef<HTMLDivElement>(null);
 
@@ -113,6 +111,36 @@ const App = () => {
 
   const exportAsWord = async () => {
     setIsExporting(true);
+
+    // 微信内置浏览器：调用服务端 API 生成文件，返回真实 https:// 下载链接
+    if (isWechat()) {
+      try {
+        const payload = { inspectionDate, inspectionDepartment, inspectionItem, problems, suggestions };
+        const res = await fetch('/api/generate-docx', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error('Server error');
+        const blob = await res.blob();
+        const fileName = `${formatDateTitle(inspectionDate)}${inspectionItem}专项检查报告.docx`;
+        const url = URL.createObjectURL(blob);
+        // 创建隐藏 <a> 触发下载，微信会弹出"下载完成，在微信文件中查看"
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (err) {
+        alert('导出失败，请重试！');
+      } finally {
+        setIsExporting(false);
+      }
+      return;
+    }
+
     // 辅助函数：将 Base64 数据 URI 转换为 ArrayBuffer
     const base64DataURLToArrayBuffer = (dataURI: string) => {
       const base64String = dataURI.split(',')[1];
@@ -424,15 +452,6 @@ const App = () => {
     try {
       const blob = await Packer.toBlob(doc);
       const fileName = `${formatDateTitle(inspectionDate)}${inspectionItem}专项检查报告.docx`;
-
-      // 微信内置浏览器：生成 Data URL 供用户复制后在浏览器打开下载
-      if (isWechat()) {
-        const arrayBuffer = await blob.arrayBuffer();
-        const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-        const dataUrl = `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${base64}`;
-        setWechatDownloadUrl({ url: dataUrl, fileName });
-        return;
-      }
 
       // 针对移动端，优先尝试使用原生分享 API
       const file = new File([blob], fileName, { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
@@ -799,39 +818,7 @@ const App = () => {
       </div>
     </div>
 
-    {/* 微信内下载弹窗 */}
-    {wechatDownloadUrl && (
-      <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center px-4">
-        <div className="bg-white p-6 rounded-2xl max-w-sm w-full text-center space-y-4">
-          <div className="w-16 h-16 bg-duo-green text-white rounded-full flex items-center justify-center mx-auto">
-            <Download size={32} />
-          </div>
-          <h3 className="text-xl font-bold text-[#3c3c3c]">文档已生成</h3>
-          <p className="text-[#777] text-sm leading-relaxed">
-            复制下方链接，在浏览器中打开即可下载文档。
-          </p>
-          <div className="w-full py-3 px-4 rounded-xl bg-[#f0f9ff] border-2 border-duo-blue text-duo-blue text-xs break-all text-left select-all cursor-text">
-            {wechatDownloadUrl.url.slice(0, 80)}...
-          </div>
-          <button
-            className="btn-duo btn-duo-blue w-full py-3"
-            onClick={() => {
-              navigator.clipboard.writeText(wechatDownloadUrl.url);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
-            }}
-          >
-            {copied ? '已复制 ✓' : '复制链接'}
-          </button>
-          <button
-            className="btn-duo btn-duo-gray w-full py-2 text-[#afafaf] text-sm"
-            onClick={() => setWechatDownloadUrl(null)}
-          >
-            关闭
-          </button>
-        </div>
-      </div>
-    )}
+
     </>
   );
 };
